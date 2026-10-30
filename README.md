@@ -42,7 +42,9 @@ python3 tools/safe-tour/build_data.py --osm /tmp/osm --cctv <서울 CCTV 표준�
 ## 로컬에서 보기
 
 ```bash
-python3 -m http.server 8765
+python3 -m http.server 0 --bind 127.0.0.1
 ```
 
-브라우저에서 `http://localhost:8765` 을 엽니다. 이 포트도 사용 중이면 숫자만 바꿔 실행하세요(예: `python3 -m http.server 8790`).
+포트를 `0`으로 주면 비어 있는 포트를 자동으로 골라 실행합니다. 터미널에 나오는 `Serving HTTP on 127.0.0.1 port 54321 …`의 포트 번호로 `http://127.0.0.1:54321` 을 엽니다.
+
+정해진 포트를 쓰고 싶다면 사용 중이지 않은 번호를 직접 지정하세요(예: `python3 -m http.server 8790`).
