@@ -40,6 +40,7 @@
       f.className = 'panel';
       f.id = 'panel-' + s.id;
       f.src = s.path;
+      if (s.allow) f.allow = s.allow;   // e.g. 'geolocation'
       f.title = s.title || s.label;
       f.setAttribute('role', 'tabpanel');
       f.setAttribute('aria-labelledby', 'tab-' + s.id);

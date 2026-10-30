@@ -4,7 +4,7 @@
 
 | 탭 | 서비스 | 경로 |
 |---|---|---|
-| Safe Tour | 서울 안심 도보길 – 관광지 사이를 CCTV가 비추는 길로 안내 | `services/safe-tour/` |
+| Safe Tour | 서울 안심 도보길 – 지금 위치에서 걸어서 1시간(4km) 안의 서울 관광지를 CCTV가 비추는 길로 안내 | `services/safe-tour/` |
 
 ## 구조
 
@@ -27,15 +27,25 @@ tools/<id>/           서비스 데이터 생성 스크립트
 
 탭 주소는 `…/#my-service`가 됩니다. 각 서비스는 별도 프레임에서 열리므로 스타일과 스크립트가 서로 섞이지 않습니다.
 
+## Safe Tour 동작
+
+- 출발지: 브라우저 위치 정보를 씁니다. 권한이 없거나, 12초 안에 응답이 없거나, 서울 밖이면 종로(종각·보신각)에서 시작합니다. 지도의 빈 곳을 눌러 옮길 수도 있습니다.
+- 목적지: 출발지에서 실제 걷는 길로 4km(시속 4.2km 기준 약 57분) 안에 있는 관광지만 가까운 순으로 보여 줍니다.
+- 지도: 서울 전체를 2km 격자 조각(`data/tiles/`)으로 나눠 두고, 출발지 주변 조각만 불러옵니다.
+- 셸의 프레임에 `allow="geolocation"`을 주어야 탭 안에서 위치를 물을 수 있습니다(`services.js`의 `allow`).
+
 ## Safe Tour 데이터 갱신
 
 ```bash
-tools/safe-tour/fetch_osm.sh /tmp/osm
-python3 tools/safe-tour/build_data.py --osm /tmp/osm --cctv <서울 CCTV 표준데이터.csv>
+curl -LO https://download.bbbike.org/osm/bbbike/Seoul/Seoul.osm.pbf
+pip install osmium
+python3 tools/safe-tour/build_data.py --pbf Seoul.osm.pbf --cctv <서울 CCTV 표준데이터.csv>
 ```
 
-- 보행 도로망: © OpenStreetMap 기여자 (ODbL)
-- CCTV: 공공데이터포털 전국CCTV표준데이터 – 서울특별시 자치구 제공분 (2026-05-21 기준). 구청 관리 CCTV만 포함되어 경찰·문화재·민간 CCTV는 빠져 있습니다.
+`services/safe-tour/data/`에 `index.json`, `places.json`(관광지), `areas-large.json`(한강·큰 공원), `tiles/*.json`(보행 도로망·작은 녹지·CCTV)이 만들어집니다. 관광지는 OSM에서 이름과 위키데이터가 있는 궁궐·박물관·미술관·명소·공원·시장 등과, 스크립트의 `CURATED` 목록(명동·인사동·홍대 거리 등)을 씁니다.
+
+- 보행 도로망·관광지: © OpenStreetMap 기여자 (ODbL)
+- CCTV: 공공데이터포털 전국CCTV표준데이터 – 서울특별시 자치구 제공분 (2026-05-21 기준, 59,750건). 구청 관리 CCTV만 포함되어 경찰·문화재·민간 CCTV는 빠져 있습니다.
 
 앱 안에서 최신 CSV를 불러와 바꿔 쓸 수도 있습니다(브라우저에만 저장).
 
