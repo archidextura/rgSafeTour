@@ -42,7 +42,7 @@ python3 tools/safe-tour/build_data.py --osm /tmp/osm --cctv <서울 CCTV 표준�
 ## 로컬에서 보기
 
 ```bash
-python3 -m http.server 8000
+python3 -m http.server 8765
 ```
 
-브라우저에서 `http://localhost:8000` 을 엽니다.
+브라우저에서 `http://localhost:8765` 을 엽니다. 이 포트도 사용 중이면 숫자만 바꿔 실행하세요(예: `python3 -m http.server 8790`).
