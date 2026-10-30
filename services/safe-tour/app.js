@@ -7,7 +7,7 @@ const DATA = 'data/';
 const REACH = 4000;          // walking distance shown as "within an hour"
 const PACE = 70;             // metres per minute (≈ 4.2 km/h)
 const LOAD_R = 4800;         // load tiles this far around the start
-const JONGNO = { lat: 37.57003, lon: 126.98320, name: '종로(종각·보신각)' };
+const DEFAULT_GU = '종로구';
 const STEP = 8;              // CCTV coverage sample spacing (m)
 
 const $ = id => document.getElementById(id);
@@ -217,9 +217,9 @@ let start = null;          // {x, y, v, name, note}
 let reach = [];            // [{place, d}] sorted by walking distance
 let dest = null;           // reach item
 let safe = null, short = null;
-let userMovedStart = false;
+let userPicked = false;    // the user chose a start; don't replace it with a late location fix
 
-async function setStart(x, y, name, note, fit) {
+async function setStart(x, y, name, note, fit, place) {
   if (!inBounds(x, y)) { toast('서울 지도 범위 밖이에요. 서울 안을 눌러 주세요.'); return; }
   try { await ensureTiles(x, y); } catch (err) { busy(null); toast('지도를 불러오지 못했어요: ' + err.message, 5000); return; }
   busy('걸어서 갈 수 있는 곳을 찾는 중…');
@@ -227,8 +227,9 @@ async function setStart(x, y, name, note, fit) {
   applyCams();
   const v = nearestVertex(x, y, 800);
   if (v < 0) { busy(null); toast('근처에 걸을 수 있는 길이 없어요. 다른 곳을 눌러 주세요.'); return; }
-  start = { x, y, v, name, note };
+  start = { x, y, v, name, note, place: place || null };
   $('start-name').textContent = name; $('start-note').textContent = note || '';
+  renderStartsKeepScroll();
   updateNotice(); buildChips();
   findReach();
   dest = null; safe = short = null;
@@ -242,7 +243,7 @@ function findReach() {
   const { dist } = dijkstra(start.v, -1, 0, REACH + 300);
   reach = [];
   for (const p of PLACES) {
-    if (Math.hypot(p.x - start.x, p.y - start.y) > REACH) continue;
+    if (p === start.place || Math.hypot(p.x - start.x, p.y - start.y) > REACH) continue;
     if (p.v === undefined || p.v < 0 || p.vAt !== VX.length) { p.v = nearestVertex(p.x, p.y, 300); p.vAt = VX.length; }
     if (p.v < 0) continue;
     const d = dist[p.v] + Math.hypot(VX[p.v] - p.x, VY[p.v] - p.y);
@@ -252,7 +253,7 @@ function findReach() {
 }
 function renderPlaces() {
   const q = $('q').value.trim(), ul = $('places');
-  $('places-title').textContent = '걸어서 1시간 안의 관광지 ' + reach.length + '곳';
+  $('places-title').textContent = '도착지: 걸어서 1시간 안의 관광지 ' + reach.length + '곳';
   const list = q ? reach.filter(r => r.p.n.includes(q) || r.p.k.includes(q) || (r.p.en || '').toLowerCase().includes(q.toLowerCase())) : reach;
   ul.innerHTML = '';
   if (!list.length) {
@@ -307,34 +308,85 @@ function route(fit) {
   if (fit) fitRoute(); else render();
 }
 
-// ---------- location ----------
-function useJongno(reason) {
-  const [x, y] = toXY(JONGNO.lat, JONGNO.lon);
-  return setStart(x, y, JONGNO.name, reason, true);
+// ---------- start: a 구 and its attractions, or the phone's location ----------
+let DISTRICTS = [], gu = DEFAULT_GU, firstStart = Promise.resolve();
+const KIND_ORDER = ['궁궐·유적', '거리·동네', '전망·명소', '박물관', '시장', '미술관', '공원', '사찰·성당'];
+const GU_PICK = {   // representative start for each 구
+  종로구: '경복궁', 중구: '명동', 용산구: '국립중앙박물관', 성동구: '서울숲', 광진구: '서울어린이대공원',
+  동대문구: '경동시장', 중랑구: '용마폭포', 성북구: '길상사', 강북구: '국립4·19민주묘지', 도봉구: '서울창포원',
+  노원구: '태릉 문정왕후릉', 은평구: '은평한옥마을', 서대문구: '서대문형무소역사관', 마포구: '홍대 거리',
+  양천구: '목동 파리공원', 강서구: '서울식물원', 구로구: '고척스카이돔', 금천구: '호압사', 영등포구: '63스퀘어',
+  동작구: '국립서울현충원', 관악구: '샤로수길', 서초구: '반포한강공원', 강남구: '봉은사', 송파구: '롯데월드타워',
+  강동구: '서울 암사동 유적',
+};
+const isMobile = matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+function inRings(x, y, rings) {
+  let hit = false;
+  for (const r of rings) for (let i = 0, j = r.length - 2; i < r.length; j = i, i += 2) {
+    const xi = r[i], yi = r[i + 1], xj = r[j], yj = r[j + 1];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) hit = !hit;
+  }
+  return hit;
+}
+const guOf = (x, y) => (DISTRICTS.find(d => inRings(x, y, d.rings)) || {}).n || null;
+function guPlaces(g) {
+  return PLACES.filter(p => p.gu === g).sort((a, b) =>
+    (b.n === GU_PICK[g]) - (a.n === GU_PICK[g]) || KIND_ORDER.indexOf(a.k) - KIND_ORDER.indexOf(b.k) || a.n.localeCompare(b.n, 'ko'));
+}
+function setGu(g) { gu = g; $('gu').value = g; }
+function renderStarts() {
+  const q = $('sq').value.trim(), ul = $('starts'), ql = q.toLowerCase();
+  const list = q ? PLACES.filter(p => p.n.includes(q) || p.k.includes(q) || p.gu.includes(q) || (p.en || '').toLowerCase().includes(ql)).sort((a, b) => a.n.localeCompare(b.n, 'ko'))
+    : guPlaces(gu);
+  $('starts-title').textContent = q ? '서울 전체에서 찾은 관광지 ' + list.length + '곳' : gu + ' 관광지 ' + list.length + '곳';
+  ul.innerHTML = '';
+  if (!list.length) { const li = document.createElement('li'); li.className = 'empty'; li.textContent = '“' + q + '”에 맞는 관광지가 없어요.'; ul.appendChild(li); return; }
+  for (const p of list) {
+    const li = document.createElement('li'), b = document.createElement('button');
+    b.type = 'button'; b.setAttribute('aria-pressed', start && start.place === p ? 'true' : 'false');
+    b.innerHTML = '<span class="nm">' + esc(p.n) + '</span><span class="ds" style="font-family:var(--f-body)">' + (q ? esc(p.gu) : '') + '</span><span class="kd">' + esc(p.k) + '</span><span class="mn"></span>';
+    b.onclick = () => { userPicked = true; startAtPlace(p); };
+    li.appendChild(b); ul.appendChild(li);
+  }
+}
+function renderStartsKeepScroll() { const ul = $('starts'), s = ul.scrollTop; renderStarts(); ul.scrollTop = s; }
+function startAtPlace(p, note) {
+  if (p.gu !== gu) setGu(p.gu);
+  return setStart(p.x, p.y, p.n, note || p.gu + ' · ' + p.k, true, p);
+}
+function startAtGu(g, note) {
+  setGu(g); $('sq').value = '';
+  const p = guPlaces(g)[0];
+  renderStarts();
+  return p ? startAtPlace(p, note) : Promise.resolve();
 }
 function locate(manual) {
-  if (!navigator.geolocation) return useJongno('이 브라우저는 위치 기능을 지원하지 않아 종로를 출발지로 정했어요.');
-  $('start-name').textContent = '위치를 확인하는 중…';
-  $('start-note').textContent = '브라우저가 위치 권한을 물으면 허용해 주세요.';
-  let settled = false;
-  const giveUp = setTimeout(() => { if (!settled) { settled = true; useJongno('위치 정보를 받지 못해 종로를 출발지로 정했어요.'); } }, 12000);
+  const btn = $('locate');
+  if (!navigator.geolocation) { if (manual) toast('이 기기에서는 위치 기능을 쓸 수 없어요.'); return; }
+  btn.disabled = true; btn.textContent = '위치 확인 중…';
+  let over = false;
+  const fail = why => {
+    if (over) return; over = true; clearTimeout(timer); btn.disabled = false; btn.textContent = '현재 위치에서 시작';
+    if (manual) { toast(why + ' 구를 골라 출발지를 정해 주세요.', 4000); return; }
+    firstStart.then(() => { if (!userPicked) $('start-note').textContent = why + ' 기본 출발지에서 시작했어요. 구를 골라 바꿀 수 있어요.'; });
+  };
+  // no answer at all (permission prompt ignored, no GPS fix)
+  const timer = setTimeout(() => fail('현재 위치를 받지 못했어요.'), 20000);
+  const done = () => { over = true; clearTimeout(timer); btn.disabled = false; btn.textContent = '현재 위치에서 시작'; };
   navigator.geolocation.getCurrentPosition(pos => {
-    const [x, y] = toXY(pos.coords.latitude, pos.coords.longitude);
+    if (over) return;
+    done();
+    const [x, y] = toXY(pos.coords.latitude, pos.coords.longitude), g = inBounds(x, y) ? guOf(x, y) : null;
+    if (!g) { over = false; fail('현재 위치가 서울 밖이에요.'); return; }
     const acc = Math.round(pos.coords.accuracy || 0);
-    if (!inBounds(x, y)) {
-      if (!settled) { settled = true; clearTimeout(giveUp); useJongno('현재 위치가 서울 밖이라 종로를 출발지로 정했어요.'); }
-      else if (manual) toast('현재 위치가 서울 밖이에요.');
-      return;
-    }
-    if (settled && userMovedStart && !manual) return;   // keep a start the user picked meanwhile
-    settled = true; clearTimeout(giveUp);
-    setStart(x, y, '현재 위치', acc ? '위치 정확도 약 ±' + acc + ' m' : '', true);
+    firstStart.then(() => {   // let the default start finish first so it can't overwrite this one
+      if (!manual && userPicked) return;
+      setGu(g); $('sq').value = ''; renderStarts();
+      setStart(x, y, '현재 위치', g + (acc ? ' · 위치 정확도 약 ±' + acc + ' m' : ''), true, null);
+    });
   }, err => {
-    if (settled) { if (manual) toast('위치 정보를 받지 못했어요.'); return; }
-    settled = true; clearTimeout(giveUp);
-    const why = err.code === 1 ? '위치 권한이 꺼져 있어' : err.code === 3 ? '위치 확인이 너무 오래 걸려' : '위치 정보를 받지 못해';
-    useJongno(why + ' 종로를 출발지로 정했어요.');
-  }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+    fail(err.code === 1 ? '위치 권한이 꺼져 있어요.' : err.code === 3 ? '위치 확인이 너무 오래 걸려요.' : '위치 정보를 받지 못했어요.');
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
 }
 
 // ---------- map ----------
@@ -367,6 +419,9 @@ function draw() {
     for (const a of AREAS) if (a.k === k && visible(a.bb)) a.rings.forEach(ring);
     ctx.fill('evenodd');
   }
+  // selected 구 outline
+  const D = DISTRICTS.find(d => d.n === gu);
+  if (D) { ctx.strokeStyle = C['ink-3']; ctx.lineWidth = 1.5; ctx.setLineDash([2, 5]); ctx.beginPath(); D.rings.forEach(ring); ctx.stroke(); ctx.setLineDash([]); }
   // CCTV halos
   if (s > 0.15) {
     ctx.fillStyle = C['cam-glow']; ctx.beginPath();
@@ -465,8 +520,10 @@ function tap(px, py) {
     if (best) { showCam(best); return; }
   }
   $('camcard').hidden = true;
-  userMovedStart = true;
-  setStart(wx(px), wy(py), '지도에서 고른 지점', '지도를 눌러 정한 출발지예요.', false).then(() => toast('출발지를 옮겼어요.'));
+  userPicked = true;
+  const x = wx(px), y = wy(py), g = guOf(x, y);
+  if (g) setGu(g);
+  setStart(x, y, '지도에서 고른 지점', (g ? g + ' · ' : '') + '지도를 눌러 정한 출발지예요.', false, null).then(() => { renderStarts(); toast('출발지를 옮겼어요.'); });
 }
 function showCam(c) {
   const ym = c[5] && c[5].length >= 6 ? c[5].slice(0, 4) + '년 ' + (+c[5].slice(4, 6)) + '월' : '정보 없음';
@@ -483,8 +540,9 @@ let busyNow = false; function busy(msg) { busyNow = !!msg; $('loading').hidden =
 $('q').addEventListener('input', renderPlaces);
 $('weight').oninput = e => { W = +e.target.value; route(false); };
 $('radius').oninput = e => { R = +e.target.value; $('radiusv').textContent = R + ' m'; computeCoverage(); route(false); };
-$('locate').onclick = () => { userMovedStart = false; locate(true); };
-$('jongno').onclick = () => { userMovedStart = true; useJongno('기본 출발지예요.'); };
+$('locate').onclick = () => locate(true);
+$('gu').onchange = e => { userPicked = true; startAtGu(e.target.value); };
+$('sq').addEventListener('input', renderStarts);
 document.querySelectorAll('input[name=src]').forEach(r => r.onchange = () => { if (r.checked) { source = r.value; applyCams(); if (start) { findReach(); renderPlaces(); } route(false); } });
 
 // CSV import (whole Seoul, kept in memory and, if it fits, in this browser)
@@ -530,21 +588,24 @@ function parseCSV(t) {
 window.addEventListener('resize', resize);
 resize();
 busy('지도 정보를 불러오는 중…');
-Promise.all(['index.json', 'places.json', 'areas-large.json'].map(n => fetch(DATA + n).then(r => { if (!r.ok) throw new Error(n + ' (HTTP ' + r.status + ')'); return r.json(); })))
-  .then(([idx, places, large]) => {
+Promise.all(['index.json', 'places.json', 'areas-large.json', 'districts.json'].map(n => fetch(DATA + n).then(r => { if (!r.ok) throw new Error(n + ' (HTTP ' + r.status + ')'); return r.json(); })))
+  .then(([idx, places, large, districts]) => {
     IDX = idx; TILESET = new Set(idx.tiles); PURP = idx.purposes;
     enabled = new Set(PURP.filter(p => p !== '교통단속' && p !== '교통정보수집'));
     toXY = (lat, lon) => [(lon - idx.lon0) * idx.kx, (lat - idx.lat0) * idx.ky];
     inBounds = (x, y) => x >= idx.bounds[0] && y >= idx.bounds[1] && x <= idx.bounds[2] && y <= idx.bounds[3] &&
       TILESET.has(Math.floor(x / idx.tile) + '_' + Math.floor(y / idx.tile));
-    PLACES = places.map(([n, k, x, y, en]) => ({ n, k, x, y, en }));
+    PLACES = places.map(([n, k, x, y, en, gu]) => ({ n, k, x, y, en, gu }));
+    DISTRICTS = districts.map(([n, cx, cy, rings]) => ({ n, cx, cy, rings }));
+    const sel = $('gu');
+    DISTRICTS.map(d => d.n).sort((a, b) => a.localeCompare(b, 'ko')).forEach(n => { const o = document.createElement('option'); o.value = n; o.textContent = n; sel.appendChild(o); });
     LARGE = large.map(([k, rings]) => ({ k, rings, bb: bbox(rings.flat()) }));
     $('base-hint').textContent = '전국CCTV표준데이터 · ' + idx.camsDate + ' 기준 · 서울 ' + idx.counts.cctvSites.toLocaleString() + '곳, 카메라 ' + idx.counts.cctvCameras.toLocaleString() + '대';
     refreshImportUI();
     if (IMPORTED && IMPORTED.length) { source = 'import'; $('src-import').checked = true; }
-    const [x, y] = toXY(JONGNO.lat, JONGNO.lon); view.cx = x; view.cy = y;
     busy(null);
-    locate(false);
+    firstStart = startAtGu(DEFAULT_GU, isMobile ? '기본 출발지예요. 현재 위치를 확인하고 있어요.' : '기본 출발지예요. 구를 고르거나 서울 전체에서 관광지를 찾아 출발지를 바꿀 수 있어요.');
+    if (isMobile) { $('locate').hidden = false; locate(false); }
   })
   .catch(err => { busy(null); $('verdict').textContent = '지도 데이터를 불러오지 못했어요 (' + err.message + '). 페이지를 새로고침해 주세요.'; });
 })();

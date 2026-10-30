@@ -6,7 +6,8 @@ Inputs
 
 Output (services/safe-tour/data/)
   index.json        projection, tile size, list of tiles, CCTV purposes, data dates
-  places.json       tourist destinations (named, notable OSM features)
+  places.json       tourist destinations (named, notable OSM features) with their 구
+  districts.json    Seoul's 25 구 with simplified boundaries
   areas-large.json  big parks, mountains and the Han river, simplified
   tiles/<i>_<j>.json  walking graph, small areas and CCTV sites for one tile
 
@@ -59,7 +60,19 @@ CURATED = {
     '뚝섬한강공원': ('뚝섬한강공원', '공원'), '망원한강공원': ('망원한강공원', '공원'), '경의선숲길공원': ('경의선숲길', '공원'),
     '인왕산': ('인왕산', '공원'), '서울함공원': ('서울함공원', '공원'),
     '노량진수산시장': ('노량진수산시장', '시장'), '망원시장': ('망원시장', '시장'),
+    '은평한옥마을': ('은평한옥마을', '거리·동네'), '샤로수길': ('샤로수길', '거리·동네'),
+    '선유도공원': ('선유도공원', '공원'), '석촌호수': ('석촌호수', '공원'), '불광천': ('불광천', '공원'),
+    '금천체육공원': ('금천체육공원', '공원'), '서울창포원': ('서울창포원', '공원'), '홍릉수목원': ('홍릉수목원', '공원'),
+    '길동생태공원': ('길동생태공원', '공원'), '천호공원': ('천호공원', '공원'), '관악산': ('관악산', '공원'),
+    '도봉산': ('도봉산', '공원'), '수락산': ('수락산', '공원'), '불암산': ('불암산', '공원'),
+    '호압사': ('호압사', '사찰·성당'), '길상사': ('길상사', '사찰·성당'), '4.19민주묘지': ('국립4·19민주묘지', '궁궐·유적'),
+    '양천향교': ('양천향교', '궁궐·유적'), '세종대왕기념관': ('세종대왕기념관', '박물관'),
+    '고척스카이돔': ('고척스카이돔', '전망·명소'), '마장축산물시장': ('마장축산물시장', '시장'),
 }
+
+SEOUL_GU = ['종로구', '중구', '용산구', '성동구', '광진구', '동대문구', '중랑구', '성북구', '강북구', '도봉구',
+            '노원구', '은평구', '서대문구', '마포구', '양천구', '강서구', '구로구', '금천구', '영등포구', '동작구',
+            '관악구', '서초구', '강남구', '송파구', '강동구']
 
 
 def inside(lat, lon):
@@ -94,8 +107,16 @@ def area_kind(t):
     return None
 
 
-def place_kind(t):
-    if 'name' not in t or 'wikidata' not in t:   # wikidata keeps the list to notable places
+MINOR = ('/', '안내', '어린이공원', '쉼터', '화장실', '놀이터', '주차장', '정류장', '입구', '출구', '소공원', '쌈지공원',
+         '산책로', '오거리', '사거리', '센터', '키즈', '수영장')
+MIN_PER_GU = 8      # top up 구 with few notable places from the candidates below
+
+
+def place_kind(t, notable=True):
+    """Category label for a destination. notable=True requires a wikidata link."""
+    if 'name' not in t or (notable and 'wikidata' not in t):
+        return None
+    if not notable and any(m in t['name'] for m in MINOR):
         return None
     for label, test in PLACE_KINDS:
         try:
@@ -149,6 +170,8 @@ class Collect(osmium.SimpleHandler):
         self.ways = []        # (node ids, coords, class, name)
         self.areas = []       # (kind, [rings]) rings as lists of (x, y)
         self.places = {}      # name -> (kind, x, y, size)
+        self.districts = {}   # 구 name -> [rings]
+        self.extra = {}       # name -> (kind, x, y, score, en): candidates without wikidata
 
     def _place(self, t, x, y, size=0):
         cur = CURATED.get(t.get('name'))
@@ -157,6 +180,16 @@ class Collect(osmium.SimpleHandler):
         else:
             name, kind = t.get('name:ko') or t.get('name'), place_kind(t)
         if not kind:
+            kind = place_kind(t, notable=False)
+            if kind:
+                # rank: museums/attractions/markets first, then by area (parks)
+                base = {'박물관': 3, '미술관': 2, '전망·명소': 3, '시장': 3, '궁궐·유적': 2, '공원': 0, '사찰·성당': 1}.get(kind, 0)
+                if kind == '공원' and size < 20000:
+                    return
+                score = base + min(size / 100000, 5)
+                prev = self.extra.get(name)
+                if prev is None or score > prev[3]:
+                    self.extra[name] = (kind, x, y, score, t.get('name:en', ''))
             return
         prev = self.places.get(name)
         if prev is None or size > prev[3]:
@@ -195,6 +228,17 @@ class Collect(osmium.SimpleHandler):
 
     def area(self, a):
         t = {k: v for k, v in a.tags}
+        if t.get('boundary') == 'administrative' and t.get('admin_level') == '6' and t.get('name') in SEOUL_GU:
+            try:
+                rings = [[xy(n.lat, n.lon) for n in outer] for outer in a.outer_rings()]
+            except osmium.InvalidLocationError:
+                return
+            # Seoul's 중구 shares its name with other cities' 중구: keep the one inside Seoul
+            if rings and all(0 < p[0] < (LON_MAX - LON0) * KX and 0 < p[1] < (LAT_MAX - LAT0) * KY for p in rings[0][:20]):
+                prev = self.districts.get(t['name'])
+                if prev is None or sum(map(ring_area, rings)) > sum(map(ring_area, prev)):
+                    self.districts[t['name']] = rings
+            return
         kind = area_kind(t)
         is_place = place_kind(t) or t.get('name') in CURATED
         if not kind and not is_place:
@@ -211,7 +255,7 @@ class Collect(osmium.SimpleHandler):
             return
         big = max(rings, key=ring_area)
         size = ring_area(big)
-        if is_place:
+        if is_place or place_kind(t, notable=False):
             cx = sum(p[0] for p in big) / len(big)
             cy = sum(p[1] for p in big) / len(big)
             if 0 <= cx <= (LON_MAX - LON0) * KX and 0 <= cy <= (LAT_MAX - LAT0) * KY:
@@ -283,6 +327,18 @@ def read_cctv(path):
     return list(merged.values()), date, len(rows)
 
 
+def point_in_rings(x, y, rings):
+    hit = False
+    for r in rings:
+        j = len(r) - 1
+        for i in range(len(r)):
+            (xi, yi), (xj, yj) = r[i], r[j]
+            if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+                hit = not hit
+            j = i
+    return hit
+
+
 def tile_of(x, y):
     return (int(x // TILE), int(y // TILE))
 
@@ -331,9 +387,35 @@ def main():
     for c in cams:
         T(tile_of(c[0], c[1]))['c'].append(c)
 
+    missing = [g for g in SEOUL_GU if g not in h.districts]
+    if missing:
+        raise SystemExit('district boundaries not found: ' + ', '.join(missing))
+    # places: [name, category, x, y, english name, 구]; places outside Seoul are dropped
     places = []
     for name, (kind, x, y, size, en) in sorted(h.places.items()):
-        places.append([name, kind, round(x), round(y), en])
+        gu = next((g for g in SEOUL_GU if point_in_rings(x, y, h.districts[g])), None)
+        if gu:
+            places.append([name, kind, round(x), round(y), en, gu])
+    taken = {p[0] for p in places}
+    by_gu = {}
+    for name, (kind, x, y, score, en) in h.extra.items():
+        if name in taken:
+            continue
+        gu = next((g for g in SEOUL_GU if point_in_rings(x, y, h.districts[g])), None)
+        if gu:
+            by_gu.setdefault(gu, []).append((score, name, kind, x, y, en))
+    for gu, cands in by_gu.items():
+        have = sum(1 for p in places if p[5] == gu)
+        for score, name, kind, x, y, en in sorted(cands, reverse=True)[:max(0, MIN_PER_GU - have)]:
+            places.append([name, kind, round(x), round(y), en, gu])
+    places.sort()
+    districts = []
+    for g in SEOUL_GU:
+        rings = h.districts[g]
+        big = max(rings, key=ring_area)
+        cx = sum(p[0] for p in big) / len(big)
+        cy = sum(p[1] for p in big) / len(big)
+        districts.append([g, round(cx), round(cy), [[round(c) for p in simplify_ring(r, 25) for c in p] for r in rings]])
 
     out = a.out
     tdir = os.path.join(out, 'tiles')
@@ -362,7 +444,7 @@ def main():
         'counts': {'vertices': len(gxy), 'edges': len(edges), 'cctvSites': len(cams),
                    'cctvCameras': sum(c[2] for c in cams), 'places': len(places)},
     }
-    for name, obj in (('index.json', index), ('places.json', places), ('areas-large.json', large)):
+    for name, obj in (('index.json', index), ('places.json', places), ('areas-large.json', large), ('districts.json', districts)):
         with open(os.path.join(out, name), 'w', encoding='utf-8') as f:
             json.dump(obj, f, ensure_ascii=False, separators=(',', ':'))
     print(json.dumps(index['counts'], ensure_ascii=False),

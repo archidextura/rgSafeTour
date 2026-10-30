@@ -14,22 +14,26 @@
   <aside class="panel">
     <header>
       <h1>서울 안심 도보길</h1>
-      <p class="sub">지금 있는 곳에서 걸어서 1시간(4km) 안에 갈 수 있는 서울 관광지를 보여 주고, CCTV가 비추는 길을 우선으로 안내합니다.</p>
+      <p class="sub">서울의 구를 고르고 출발할 관광지를 정하면, 걸어서 1시간(4km) 안에 갈 수 있는 관광지를 CCTV가 비추는 길로 안내합니다. 휴대폰에서는 현재 위치에서 시작할 수 있어요.</p>
     </header>
 
     <section class="start" aria-label="출발지">
       <p class="lbl" style="margin:0">출발지</p>
-      <div class="startline"><span class="dot a" aria-hidden="true"></span><div><b id="start-name">위치를 확인하는 중…</b><span id="start-note">브라우저가 위치 권한을 물으면 허용해 주세요.</span></div></div>
-      <div class="row">
-        <button class="btn" id="locate" type="button">내 위치에서 시작</button>
-        <button class="btn" id="jongno" type="button">종로에서 시작</button>
+      <div class="startline"><span class="dot a" aria-hidden="true"></span><div><b id="start-name">지도 정보를 불러오는 중…</b><span id="start-note"></span></div></div>
+      <button class="btn primary" id="locate" type="button" hidden>현재 위치에서 시작</button>
+      <div class="row" style="flex-wrap:nowrap">
+        <label for="gu" class="hint" style="flex:none">구 선택</label>
+        <select id="gu" aria-label="구 선택"></select>
       </div>
-      <p class="hint" style="margin:0">지도의 빈 곳을 누르면 그곳으로 출발지를 옮겨요.</p>
+      <input class="search" id="sq" type="search" placeholder="서울 전체에서 관광지 찾기 (예: 한옥, 박물관, 시장)" aria-label="서울 전체에서 출발 관광지 찾기">
+      <p class="lbl" style="margin:4px 0 0;text-transform:none;letter-spacing:0" id="starts-title"></p>
+      <ul class="places" id="starts" aria-label="출발할 관광지 목록" style="max-height:220px"></ul>
+      <p class="hint" style="margin:0">목록에서 고른 관광지가 출발지가 돼요. 지도의 빈 곳을 눌러 정할 수도 있어요.</p>
     </section>
 
     <section class="stack" aria-label="목적지">
-      <p class="lbl" style="margin:0" id="places-title">걸어서 1시간 안의 관광지</p>
-      <input class="search" id="q" type="search" placeholder="이름으로 찾기 (예: 궁, 박물관, 시장)" aria-label="관광지 이름으로 찾기">
+      <p class="lbl" style="margin:0" id="places-title">도착지: 걸어서 1시간 안의 관광지</p>
+      <input class="search" id="q" type="search" placeholder="도착지 이름으로 찾기" aria-label="도착지 이름으로 찾기">
       <ul class="places" id="places" aria-label="관광지 목록"><li class="empty">출발지를 정하는 중이에요.</li></ul>
       <p class="hint" style="margin:0">거리는 실제 걷는 길 기준(최단 경로)이고, 시간은 시속 4.2km로 계산했어요.</p>
     </section>
@@ -95,7 +99,7 @@
       <summary>경로는 이렇게 고릅니다</summary>
       <p>길을 짧은 조각으로 나눠, 조각마다 반경 안에 CCTV가 있는지 봅니다. CCTV가 없는 조각은 실제보다 <b>더 먼 길</b>로 계산해서, 조금 돌아가더라도 카메라가 비추는 길을 고르게 합니다. 슬라이더를 오른쪽으로 옮길수록 더 많이 돌아가는 것을 허용합니다.</p>
       <p>“최장 사각 구간”은 경로에서 CCTV가 한 대도 비추지 않는 구간이 가장 길게 이어지는 거리입니다. 밤길에서는 이 값이 짧을수록 좋아요.</p>
-      <p>위치 정보는 출발지를 정하는 데만 쓰고 저장하거나 보내지 않아요. CCTV가 있다고 안전이 보장되지는 않습니다. 밝고 사람이 많은 큰길을 함께 이용하고, 위급하면 <b>112</b>에 신고하세요. 서울시 <b>안심이 앱</b>으로 귀가 모니터링도 신청할 수 있어요.</p>
+      <p>휴대폰의 위치 정보는 출발지를 정하는 데만 쓰고 저장하거나 보내지 않아요. CCTV가 있다고 안전이 보장되지는 않습니다. 밝고 사람이 많은 큰길을 함께 이용하고, 위급하면 <b>112</b>에 신고하세요. 서울시 <b>안심이 앱</b>으로 귀가 모니터링도 신청할 수 있어요.</p>
     </details>
   </aside>
 
