@@ -10,6 +10,7 @@ window.RGPIA_SERVICES = [
     label: 'Safe Tour',              // tab text
     title: '서울 안심 도보길',          // browser tab title while selected
     path: 'services/safe-tour/',     // page loaded in the tab
-    description: '관광지 사이를 CCTV가 비추는 길로 안내하는 도보 길찾기',
+    allow: 'geolocation',            // browser features the page may ask for
+    description: '서울 관광지에서 걸어서 1시간 안의 관광지를 CCTV가 비추는 길로 안내',
   },
 ];
