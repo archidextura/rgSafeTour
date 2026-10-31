@@ -2,6 +2,9 @@
 
 여러 웹 서비스를 탭으로 모아 GitHub Pages로 게시하는 정적 사이트입니다. (가칭)
 
+- 사이트: https://archidextura.github.io/rgSafeTour/ (Safe Tour: https://archidextura.github.io/rgSafeTour/#safe-tour)
+- 저장소: https://github.com/archidextura/rgSafeTour — 앞으로의 모든 개선 작업은 이 저장소에 저장합니다. (이전 저장소 architektonike/rgSafeTour 에서 커밋 기록째 옮겨 왔습니다.)
+
 | 탭 | 서비스 | 경로 |
 |---|---|---|
 | Safe Tour | 서울 안심 도보길 – 구·관광지(또는 휴대폰 현재 위치)에서 걸어서 1시간(4km) 안의 서울 관광지를 CCTV가 비추는 길로 안내 | `services/safe-tour/` |
